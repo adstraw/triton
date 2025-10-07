@@ -423,7 +423,7 @@ static PyObject *fillTMADescriptor(PyObject *self, PyObject *args) {
   CUDA_CHECK_AND_RETURN_NULL(cuTensorMapEncodeTiled(
       &desc->tensorMap, elemType, rank, (void *)global_address, shapeInt,
       stridesLL, blockSizeInt, elementStrides, CU_TENSOR_MAP_INTERLEAVE_NONE,
-      swizzle, CU_TENSOR_MAP_L2_PROMOTION_L2_128B, fill));
+      swizzle, CU_TENSOR_MAP_L2_PROMOTION_L2_256B, fill));
 
   return (PyObject *)desc;
 
