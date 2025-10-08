@@ -1,0 +1,32 @@
+{
+    "name": "Triton Development",
+    "build": {
+        "context": "..",
+        "dockerfile": "Dockerfile"
+    },
+    
+    "runArgs": [
+        "--gpus=all",
+        "--ipc=host",
+        "--cap-add=SYS_PTRACE",
+        "--security-opt=seccomp=unconfined"
+    ],
+    
+    "workspaceMount": "source=${localWorkspaceFolder},target=/triton,type=bind,consistency=cached",
+    "workspaceFolder": "/triton",
+    
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "ms-python.python",
+                "ms-python.vscode-pylance"
+            ],
+            "settings": {
+                "python.defaultInterpreterPath": "/usr/bin/python3",
+                "editor.formatOnSave": true
+            }
+        }
+    },
+    
+    "remoteUser": "root"
+}
