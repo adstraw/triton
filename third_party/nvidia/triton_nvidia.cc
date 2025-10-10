@@ -296,7 +296,63 @@ void init_triton_nvidia(py::module &&m) {
 
         self.gemm(A_shape[0], B_shape[0], A_shape[1], A_ptr, B_ptr, C_ptr,
                   D_ptr, dtype, alpha, beta);
-      });
+      })
+      .def("block_scaled_matmul",
+           [](CublasLtInstance &self, py::object &A, py::object &B,
+              py::object &C, py::object &scale_A, py::object &scale_B,
+              bool use_1d_scaling) {
+             auto A_ptr = A.attr("data_ptr")().cast<uint64_t>();
+             auto B_ptr = B.attr("data_ptr")().cast<uint64_t>();
+             auto C_ptr = C.attr("data_ptr")().cast<uint64_t>();
+             auto scale_A_ptr = scale_A.attr("data_ptr")().cast<uint64_t>();
+             auto scale_B_ptr = scale_B.attr("data_ptr")().cast<uint64_t>();
+
+             auto A_shape = A.attr("shape").cast<std::vector<int>>();
+             auto B_shape = B.attr("shape").cast<std::vector<int>>();
+             auto C_shape = C.attr("shape").cast<std::vector<int>>();
+
+             auto A_dtype =
+                 A.attr("dtype").attr("__str__")().cast<std::string>();
+             auto B_dtype =
+                 B.attr("dtype").attr("__str__")().cast<std::string>();
+             auto C_dtype =
+                 C.attr("dtype").attr("__str__")().cast<std::string>();
+
+             if (A_dtype != B_dtype) {
+               throw std::runtime_error(
+                   "A and B dtypes must match for block_scaled_matmul");
+             }
+             if (C_dtype != "torch.float16") {
+               throw std::runtime_error(
+                   "C dtype must be float16 for block_scaled_matmul, got " +
+                   C_dtype);
+             }
+
+             std::string dtype_str =
+                 A_dtype.substr(A_dtype.find_last_of('.') + 1);
+             cudaDataType_t dtype;
+             int elem_per_byte = 1;
+             if (dtype_str == "float8_e4m3fn") {
+               dtype = CUDA_R_8F_E4M3;
+               elem_per_byte = 1;
+             } else if (dtype_str == "uint8") {
+               // Packed FP4 format (2 elements per byte)
+               dtype = CUDA_R_4F_E2M1;
+               elem_per_byte = 2;
+             } else {
+               throw std::runtime_error(
+                   "Unsupported dtype for block_scaled_matmul: " + dtype_str +
+                   ". Supported: float8_e4m3fn, uint8 (packed FP4)");
+             }
+
+             // For packed FP4, A_shape[1] is the packed dimension (K // 2)
+             // For FP8, A_shape[1] is just K
+             int K_actual = A_shape[1] * elem_per_byte;
+
+             self.block_scaled_matmul(A_shape[0], B_shape[0], K_actual, A_ptr,
+                                      B_ptr, C_ptr, scale_A_ptr, scale_B_ptr,
+                                      dtype, use_1d_scaling);
+           });
 
   m.def("has_extern_deps", [](llvm::Module *dstMod) -> bool {
     // `global_smem` is special cased in Triton, so we ignore it here.

@@ -67,6 +67,8 @@ typedef enum {
   CUBLASLT_MATMUL_DESC_ATOMIC_SYNC_NUM_CHUNKS_D_COLS = 28,
   CUBLASLT_MATMUL_DESC_ATOMIC_SYNC_IN_COUNTERS_POINTER = 29,
   CUBLASLT_MATMUL_DESC_ATOMIC_SYNC_OUT_COUNTERS_POINTER = 30,
+  CUBLASLT_MATMUL_DESC_A_SCALE_MATRIX_TYPE = 31,
+  CUBLASLT_MATMUL_DESC_B_SCALE_MATRIX_TYPE = 32,
 } cublasLtMatmulDescAttributes_t;
 
 typedef enum {
@@ -77,6 +79,13 @@ typedef enum {
   CUBLAS_OP_CONJG =
       3 /* conjugate, placeholder - not supported in the current release */
 } cublasOperation_t;
+
+typedef enum {
+  CUBLASLT_MATMUL_MATRIX_SCALE_NONE = 0,
+  CUBLASLT_MATMUL_MATRIX_SCALE_SCALAR_32F = 1,
+  CUBLASLT_MATMUL_MATRIX_SCALE_VEC128_32F = 2,      /* 1D block scaling */
+  CUBLASLT_MATMUL_MATRIX_SCALE_BLK128x128_32F = 3,  /* 2D block scaling */
+} cublasLtMatmulMatrixScale_t;
 
 typedef enum {
   CUBLASLT_MATMUL_PREF_SEARCH_MODE = 0,
@@ -142,6 +151,7 @@ typedef enum cudaDataType_t {
   CUDA_C_64U = 27,     /* complex as a pair of unsigned 64-bit int numbers */
   CUDA_R_8F_E4M3 = 28, /* real as a nv_fp8_e4m3 */
   CUDA_R_8F_E5M2 = 29, /* real as a nv_fp8_e5m2 */
+  CUDA_R_4F_E2M1 = 30, /* real as a nv_fp4_e2m1 (nvfp4/mxfp4) */
 } cudaDataType;
 
 struct cublasContext;
@@ -150,5 +160,7 @@ struct cublasLtMatmulDescOpaque_t;
 typedef cublasLtMatmulDescOpaque_t *cublasLtMatmulDesc_t;
 struct CUstream_st;
 typedef struct CUstream_st *cudaStream_t;
+struct CUevent_st;
+typedef struct CUevent_st *cudaEvent_t;
 
 #endif // TRITON_CUBLAS_TYPES_H
