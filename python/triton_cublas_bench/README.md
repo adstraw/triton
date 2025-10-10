@@ -12,7 +12,7 @@ This benchmarking suite compares Triton kernel performance against cuBLAS for ma
 
 ## What Was Done
 
-### 1. ✅ Added cuBLAS Autotuning
+### 1. ✅ Added cuBLAS Autotuning with Caching
 - Modified `/triton/third_party/nvidia/include/cublas_instance.h`
 - Implemented algorithm autotuning that:
   - Queries 8 heuristic algorithms from cuBLASLt
@@ -20,14 +20,16 @@ This benchmarking suite compares Triton kernel performance against cuBLAS for ma
   - Takes the median time
   - Caches the best algorithm per (M, N, K, dtype) configuration
 - Applied to both regular matmul and block-scaled matmul
+- **Critical:** Caching prevents ~40ms autotuning overhead from appearing in measurements
 
 ### 2. ✅ Added cuBLAS Block-Scaled Matmul Support
 - Modified C++ backend:
-  - `/triton/third_party/nvidia/include/cublas_instance.h` - Added `block_scaled_matmul()` method
+  - `/triton/third_party/nvidia/include/cublas_instance.h` - Added `block_scaled_matmul()` method with autotuning cache
   - `/triton/third_party/nvidia/include/cublas_types.h` - Added FP4 data type and scale matrix types
   - `/triton/third_party/nvidia/triton_nvidia.cc` - Added Python binding
-- Modified Python tutorial:
-  - `/triton/python/tutorials/10-block-scaled-matmul.py` - Added cuBLAS integration
+- Modified Python tutorials:
+  - `/triton/python/tutorials/09-persistent-matmul.py` - Removed Proton instrumentation from cuBLAS wrapper
+  - `/triton/python/tutorials/10-block-scaled-matmul.py` - Added cuBLAS integration, removed Proton instrumentation
 
 ### 3. ✅ Created Benchmarking Scripts
 - `bench_09_persistent_matmul.py` - Benchmarks tutorial 09 (fp16, fp8)
@@ -254,10 +256,11 @@ If you see cuBLASLt errors, check:
 ## Implementation Notes
 
 ### cuBLAS Autotuning Strategy
-- **One-time:** Autotuning happens once per (M, N, K, dtype) configuration
-- **Cached:** Best algorithm is stored in memory for reuse
+- **One-time:** Autotuning happens once per (M, N, K, dtype) configuration during first warmup iteration
+- **Cached:** Best algorithm is stored in memory for all subsequent calls
 - **Methodology:** Follows NVIDIA's cuBLASLt autotuning sample
-- **Overhead:** ~40ms autotuning time per configuration (not included in measurements)
+- **Overhead:** ~40ms autotuning time per configuration (happens once, excluded from measurements via caching)
+- **Critical for block-scaled matmul:** Without caching, autotuning overhead dominates measurements (6x slowdown observed)
 
 ### Benchmarking Methodology
 - Uses `triton.testing.do_bench` (not Proton) per instructions
@@ -267,19 +270,20 @@ If you see cuBLASLt errors, check:
 - L2 cache flushing handled by `do_bench`
 
 ### Why Not Proton?
-Per the email chain, Proton benchmarking showed inconsistent/unfair results for cuBLAS. The `do_bench` utility provides more reliable measurements for library comparisons.
+Per the email chain from the cuBLAS team, Proton benchmarking showed inconsistent/unfair results for cuBLAS, adding measurement overhead. The `do_bench` utility provides more reliable measurements for library comparisons. Proton instrumentation has been removed from cuBLAS wrapper functions in the tutorial files.
 
 ---
 
 ## Files Modified
 
 ### C++ Backend
-- `third_party/nvidia/include/cublas_instance.h` - Added autotuning + block-scaled matmul
+- `third_party/nvidia/include/cublas_instance.h` - Added autotuning with caching + block-scaled matmul
 - `third_party/nvidia/include/cublas_types.h` - Added FP4 types
 - `third_party/nvidia/triton_nvidia.cc` - Added Python bindings
 
 ### Python Tutorials
-- `python/tutorials/10-block-scaled-matmul.py` - Added cuBLAS integration
+- `python/tutorials/09-persistent-matmul.py` - Removed Proton instrumentation from cuBLAS wrapper
+- `python/tutorials/10-block-scaled-matmul.py` - Added cuBLAS integration, removed Proton instrumentation
 
 ### New Scripts (in `/triton/python/triton_cublas_bench/`)
 - `bench_09_persistent_matmul.py` - Tutorial 09 benchmarking
