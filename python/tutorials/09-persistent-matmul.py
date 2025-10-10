@@ -599,11 +599,8 @@ def cublas_matmul(a, b):
     N, K = b.shape
     dtype = a.dtype
     c = torch.empty((M, N), device=a.device, dtype=dtype)
-    bytes_per_elem = a.element_size()
-    flops_str = f"flops{bytes_per_elem * 8}"
-    with proton.scope(f"cublas [M={M}, N={N}, K={K}]",
-                      {"bytes": bytes_per_elem * (M * K + N * K + M * N), flops_str: 2. * M * N * K}):
-        cublas.matmul(a, b, c)
+    # Execute cuBLAS (without Proton instrumentation to avoid measurement bias)
+    cublas.matmul(a, b, c)
     return c
 
 

@@ -91,6 +91,10 @@ class CublasLtInstance {
   // Cache for autotuned algorithms: (m, n, k, dtype) -> algo
   using AlgoKey = std::tuple<int, int, int, cudaDataType_t>;
   std::map<AlgoKey, cublasLtMatmulAlgo_t> algoCache;
+  
+  // Cache for block-scaled matmul: (m, n, k, dtype, use_1d_scaling) -> algo
+  using BlockScaledAlgoKey = std::tuple<int, int, int, cudaDataType_t, bool>;
+  std::map<BlockScaledAlgoKey, cublasLtMatmulAlgo_t> blockScaledAlgoCache;
 
   void loadCublasDylib() {
     if (dylibHandle == nullptr) {
@@ -444,66 +448,78 @@ public:
     successOrExit(cublasLtMatrixLayoutCreate(&Bdesc, dtype, k, n, k));
     successOrExit(cublasLtMatrixLayoutCreate(&Cdesc, c_dtype, m, n, m));
 
-    // Autotune for best algorithm (queries multiple heuristics and benchmarks them)
-    constexpr int requestedAlgoCount = 8;
-    constexpr int repeatAlgoCheck = 5;
-    int returnedResults = 0;
-    cublasLtMatmulHeuristicResult_t heuristicResult[requestedAlgoCount] = {0};
-
-    // Get heuristic algorithms
-    successOrExit(cublasLtMatmulAlgoGetHeuristic(
-        ltHandle, matmulDesc, Adesc, Bdesc, Cdesc, Cdesc, preference,
-        requestedAlgoCount, heuristicResult, &returnedResults));
-    if (returnedResults == 0) {
-      throw std::runtime_error(
-          "No valid algorithm found by cublasLtMatmulAlgoGetHeuristic for block-scaled matmul");
-    }
-
-    // Benchmark each algorithm and pick the best
-    cudaStream_t stream;
-    cudaEvent_t startEvent, stopEvent;
-    cudaStreamCreate(&stream);
-    cudaEventCreate(&startEvent);
-    cudaEventCreate(&stopEvent);
-
-    std::vector<float> algoTimes(repeatAlgoCheck);
-    int bestAlgoIdx = 0;
-    float bestAlgoTime = 0;
+    // Check if we have a cached algorithm for this configuration
+    BlockScaledAlgoKey key = std::make_tuple(m, n, k, dtype, use_1d_scaling);
+    cublasLtMatmulAlgo_t algo;
     float alpha = 1.0f;
     float beta = 0.0f;
+    
+    if (blockScaledAlgoCache.find(key) == blockScaledAlgoCache.end()) {
+      // Autotune and cache the best algorithm
+      constexpr int requestedAlgoCount = 8;
+      constexpr int repeatAlgoCheck = 5;
+      int returnedResults = 0;
+      cublasLtMatmulHeuristicResult_t heuristicResult[requestedAlgoCount] = {0};
 
-    for (int algoIdx = 0; algoIdx < returnedResults; algoIdx++) {
-      for (int checkIdx = 0; checkIdx < repeatAlgoCheck; checkIdx++) {
-        cudaEventRecord(startEvent, stream);
-
-        successOrExit(cublasLtMatmul(
-            ltHandle, matmulDesc, &alpha, (void *)B, Bdesc, (void *)A, Adesc,
-            &beta, (void *)C, Cdesc, (void *)C, Cdesc,
-            &heuristicResult[algoIdx].algo, (void *)workspace, workspaceSize,
-            stream));
-
-        cudaEventRecord(stopEvent, stream);
-        cudaEventSynchronize(stopEvent);
-        float time;
-        cudaEventElapsedTime(&time, startEvent, stopEvent);
-        algoTimes[checkIdx] = time;
+      // Get heuristic algorithms
+      successOrExit(cublasLtMatmulAlgoGetHeuristic(
+          ltHandle, matmulDesc, Adesc, Bdesc, Cdesc, Cdesc, preference,
+          requestedAlgoCount, heuristicResult, &returnedResults));
+      if (returnedResults == 0) {
+        throw std::runtime_error(
+            "No valid algorithm found by cublasLtMatmulAlgoGetHeuristic for block-scaled matmul");
       }
 
-      float time = median(algoTimes);
-      if (algoIdx == 0 || time < bestAlgoTime) {
-        bestAlgoTime = time;
-        bestAlgoIdx = algoIdx;
+      // Benchmark each algorithm and pick the best
+      cudaStream_t stream;
+      cudaEvent_t startEvent, stopEvent;
+      cudaStreamCreate(&stream);
+      cudaEventCreate(&startEvent);
+      cudaEventCreate(&stopEvent);
+
+      std::vector<float> algoTimes(repeatAlgoCheck);
+      int bestAlgoIdx = 0;
+      float bestAlgoTime = 0;
+
+      for (int algoIdx = 0; algoIdx < returnedResults; algoIdx++) {
+        for (int checkIdx = 0; checkIdx < repeatAlgoCheck; checkIdx++) {
+          cudaEventRecord(startEvent, stream);
+
+          successOrExit(cublasLtMatmul(
+              ltHandle, matmulDesc, &alpha, (void *)B, Bdesc, (void *)A, Adesc,
+              &beta, (void *)C, Cdesc, (void *)C, Cdesc,
+              &heuristicResult[algoIdx].algo, (void *)workspace, workspaceSize,
+              stream));
+
+          cudaEventRecord(stopEvent, stream);
+          cudaEventSynchronize(stopEvent);
+          float time;
+          cudaEventElapsedTime(&time, startEvent, stopEvent);
+          algoTimes[checkIdx] = time;
+        }
+
+        float time = median(algoTimes);
+        if (algoIdx == 0 || time < bestAlgoTime) {
+          bestAlgoTime = time;
+          bestAlgoIdx = algoIdx;
+        }
       }
+
+      memcpy(&algo, &heuristicResult[bestAlgoIdx].algo, sizeof(algo));
+      blockScaledAlgoCache[key] = algo;
+
+      cudaStreamDestroy(stream);
+      cudaEventDestroy(startEvent);
+      cudaEventDestroy(stopEvent);
+    } else {
+      // Use cached algorithm
+      algo = blockScaledAlgoCache[key];
     }
 
-    cudaStreamDestroy(stream);
-    cudaEventDestroy(startEvent);
-    cudaEventDestroy(stopEvent);
-
-    // Execute with the best algorithm (one more time for the actual result)
+    // Execute with the best algorithm
     successOrExit(cublasLtMatmul(ltHandle, matmulDesc, &alpha, (void *)B, Bdesc,
                                  (void *)A, Adesc, &beta, (void *)C, Cdesc,
-                                 (void *)C, Cdesc, &heuristicResult[bestAlgoIdx].algo,
+                                 (void *)C, Cdesc, &algo,
                                  (void *)workspace, workspaceSize, 0));
 
     if (Cdesc)

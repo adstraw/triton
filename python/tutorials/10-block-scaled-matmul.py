@@ -241,21 +241,8 @@ def cublas_block_scaled_matmul(a, a_scale, b, b_scale, block_scale_type="nvfp4")
     # Create output tensor
     output = torch.empty((M, N), dtype=torch.float16, device="cuda")
 
-    # Get dimensions for profiling
-    VEC_SIZE = 16 if block_scale_type == "nvfp4" else 32
-    ELEM_PER_BYTE_A = 2 if "fp4" in block_scale_type else 1
-    K_actual = K_packed * ELEM_PER_BYTE_A
-    
-    bytes_per_elem_a = 1
-    bytes_per_elem_b = 1 if block_scale_type == "mxfp8" else 1
-    bytes_per_elem_c = 2  # FP16 output
-
-    with proton.scope(
-        f"cublas_block_scaled_{block_scale_type} [M={M}, N={N}, K={K_actual}]",
-        {"flops": 2.0 * M * N * K_actual,
-         "bytes": bytes_per_elem_a * M * K_packed + bytes_per_elem_b * N * K_packed + bytes_per_elem_c * M * N}
-    ):
-        cublas.block_scaled_matmul(a, b, output, a_scale, b_scale, use_1d_scaling)
+    # Execute cuBLAS (without Proton instrumentation to avoid measurement bias)
+    cublas.block_scaled_matmul(a, b, output, a_scale, b_scale, use_1d_scaling)
 
     return output
 
