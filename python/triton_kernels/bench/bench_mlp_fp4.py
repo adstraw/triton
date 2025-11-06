@@ -71,7 +71,7 @@ def bench_mlp(batch_per_expt, dim1, dim2, n_expts_tot, n_expts_act, x_dtype, w_d
     input_x = torch.randn((batch // DP, dim1), device=dev)
     # run layer
     fpath = Path(tempfile.mktemp())
-    proton.start(str(fpath), hook="triton")
+    #proton.start(str(fpath), hook="triton")
     input_x = input_x.to(x_dtype)
     xg = input_x.to(wg.dtype if n_expts_tot > 1 else input_x.dtype)
     for i in range(100):
@@ -87,8 +87,8 @@ def bench_mlp(batch_per_expt, dim1, dim2, n_expts_tot, n_expts_act, x_dtype, w_d
             x = matmul_ogs(x, w2, b2 if rank % TP == 0 else None, rdata, scatter_indx=scatter_indx,
                            precision_config=pc2)
         x = triton_dist.reduce_scatter(x, metadata=metadata, dim=0)
-    proton.finalize()
-    return roofline.parse_profile(fpath.with_suffix(".hatchet"), useful_op_regex=".*matmul.*")
+    #proton.finalize()
+    #return roofline.parse_profile(fpath.with_suffix(".hatchet"), useful_op_regex=".*matmul.*")
 
 
 def roofline_mlp(batch_sizes, dim1, dim2, n_expts_tot, n_expts_act, x_dtype, w_dtype, TP, EP, \
@@ -121,4 +121,5 @@ if __name__ == "__main__":
     parser.add_argument("--num-loops", type=int, default=1)
     args = parser.parse_args()
     for _ in range(args.num_loops):
-        roofline_mlp(batch_sizes_moe, 5760, 5760, 128, 4, quantized_dtypes[0], quantized_dtypes[1], TP=1, EP=1, name="gpt-oss-x2")
+        #roofline_mlp(batch_sizes_moe, 5760, 5760, 128, 4, quantized_dtypes[0], quantized_dtypes[1], TP=1, EP=1, name="gpt-oss-x2")
+        bench_mlp(32, 5760, 5760, 128, 4, quantized_dtypes[0], quantized_dtypes[1], TP=1, EP=1, name="gpt-oss-x2")
