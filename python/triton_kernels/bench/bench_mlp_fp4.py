@@ -16,17 +16,17 @@ import tempfile
 
 
 def bench_mlp(batch_per_expt, dim1, dim2, n_expts_tot, n_expts_act, x_dtype, w_dtype, TP, EP, N):
-    print(f"bench_mlp called with arguments:")
-    print(f"  batch_per_expt={batch_per_expt}")
-    print(f"  dim1={dim1}")
-    print(f"  dim2={dim2}")
-    print(f"  n_expts_tot={n_expts_tot}")
-    print(f"  n_expts_act={n_expts_act}")
-    print(f"  x_dtype={x_dtype}")
-    print(f"  w_dtype={w_dtype}")
-    print(f"  TP={TP}")
-    print(f"  EP={EP}")
-    print(f"  N={N}")
+    # print(f"bench_mlp called with arguments:")
+    # print(f"  batch_per_expt={batch_per_expt}")
+    # print(f"  dim1={dim1}")
+    # print(f"  dim2={dim2}")
+    # print(f"  n_expts_tot={n_expts_tot}")
+    # print(f"  n_expts_act={n_expts_act}")
+    # print(f"  x_dtype={x_dtype}")
+    # print(f"  w_dtype={w_dtype}")
+    # print(f"  TP={TP}")
+    # print(f"  EP={EP}")
+    # print(f"  N={N}")
     assert n_expts_tot % EP == 0
     assert dim2 % TP == 0
     rank, world_size = triton_dist.setup()
