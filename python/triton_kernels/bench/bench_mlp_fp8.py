@@ -87,6 +87,7 @@ def bench_mlp(batch_per_expt, dim1, dim2, n_expts_tot, n_expts_act, x_dtype, w_d
             x = matmul_ogs(x, w2, b2 if rank % TP == 0 else None, rdata, scatter_indx=scatter_indx,
                            precision_config=pc2)
         x = triton_dist.reduce_scatter(x, metadata=metadata, dim=0)
+        torch.cuda.synchronize()
     #proton.finalize()
     #return roofline.parse_profile(fpath.with_suffix(".hatchet"), useful_op_regex=".*matmul.*")
 
