@@ -15,7 +15,18 @@ from bench_utils import quantize_weight
 import tempfile
 
 
-def bench_mlp(batch_per_expt, dim1, dim2, n_expts_tot, n_expts_act, x_dtype, w_dtype, TP, EP):
+def bench_mlp(batch_per_expt, dim1, dim2, n_expts_tot, n_expts_act, x_dtype, w_dtype, TP, EP, N):
+    print(f"bench_mlp called with arguments:")
+    print(f"  batch_per_expt={batch_per_expt}")
+    print(f"  dim1={dim1}")
+    print(f"  dim2={dim2}")
+    print(f"  n_expts_tot={n_expts_tot}")
+    print(f"  n_expts_act={n_expts_act}")
+    print(f"  x_dtype={x_dtype}")
+    print(f"  w_dtype={w_dtype}")
+    print(f"  TP={TP}")
+    print(f"  EP={EP}")
+    print(f"  N={N}")
     assert n_expts_tot % EP == 0
     assert dim2 % TP == 0
     rank, world_size = triton_dist.setup()
@@ -74,7 +85,7 @@ def bench_mlp(batch_per_expt, dim1, dim2, n_expts_tot, n_expts_act, x_dtype, w_d
     #proton.start(str(fpath), hook="triton")
     input_x = input_x.to(x_dtype)
     xg = input_x.to(wg.dtype if n_expts_tot > 1 else input_x.dtype)
-    for i in range(100):
+    for i in range(N):
         if n_expts_tot > 1:  # sparse
             logits = matmul_ogs(xg, wg, bg, precision_config=pcg)
             x, rdata, gather_indx, scatter_indx, metadata = triton_dist.routing(input_x, logits, n_expts_act, EP=EP,
@@ -119,8 +130,9 @@ if __name__ == "__main__":
     dense_dtypes = ["fp8", "fp8"]
     quantized_dtypes = ["fp8", "mx4"] if has_native_mx4 else ["bf16", "mx4"]
     parser = argparse.ArgumentParser()
-    parser.add_argument("--num-loops", type=int, default=1)
+    parser.add_argument("--num-loops", type=int, default=1, help="Number of iterations in the outer loop")
+    parser.add_argument("--num-loop-inner", "--N", type=int, default=1, help="Number of iterations in the benchmark loop")
     args = parser.parse_args()
     for _ in range(args.num_loops):
         #roofline_mlp(batch_sizes_moe, 5760, 5760, 128, 4, quantized_dtypes[0], quantized_dtypes[1], TP=1, EP=1, name="gpt-oss-x2")
-        bench_mlp(32, 5760, 5760, 128, 4, quantized_dtypes[0], quantized_dtypes[1], TP=1, EP=1)
+        bench_mlp(32, 5760, 5760, 128, 4, quantized_dtypes[0], quantized_dtypes[1], TP=1, EP=1, N=args.num_loop_inner)
