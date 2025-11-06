@@ -122,4 +122,4 @@ if __name__ == "__main__":
     args = parser.parse_args()
     for _ in range(args.num_loops):
         #roofline_mlp(batch_sizes_moe, 5760, 5760, 128, 4, quantized_dtypes[0], quantized_dtypes[1], TP=1, EP=1, name="gpt-oss-x2")
-        bench_mlp(32, 5760, 5760, 128, 4, quantized_dtypes[0], quantized_dtypes[1], TP=1, EP=1, name="gpt-oss-x2")
+        bench_mlp(32, 5760, 5760, 128, 4, quantized_dtypes[0], quantized_dtypes[1], TP=1, EP=1)
