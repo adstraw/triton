@@ -69,6 +69,38 @@ module attributes {"ttg.num-ctas" = 1 : i32, "ttg.num-warps" = 4 : i32} {
   }
 }
 
+// -----
+
+#shared0 = #ttg.swizzled_shared<{vec = 1, perPhase = 1, maxPhase = 1, order = [0], CTAsPerCGA = [2], CTASplitNum = [1], CTAOrder = [0]}>
+#smem = #ttg.shared_memory
+module attributes {"ttg.num-ctas" = 2 : i32, "ttg.num-warps" = 4 : i32, "ttng.two-ctas" = true} {
+  // CHECK-LABEL: wait_barrier_2cta
+  tt.func @wait_barrier_2cta(%alloc: !ttg.memdesc<1xi64, #shared0, #smem>, %phase: i32, %pred: i1) {
+    // CHECK: waitLoop:
+    // CHECK: mbarrier.try_wait.parity.relaxed.cluster.shared.b64
+    // CHECK: @!complete bra.uni waitLoop
+    // CHECK-NOT: skipWait
+    // CHECK: %{{[0-9]+}}, %arg1 :
+    ttng.wait_barrier %alloc, %phase : !ttg.memdesc<1xi64, #shared0, #smem>
+    %true = arith.constant true
+
+    // CHECK: waitLoop:
+    // CHECK: mbarrier.try_wait.parity.relaxed.cluster.shared.b64
+    // CHECK: @!complete bra.uni waitLoop
+    // CHECK-NOT: skipWait
+    // CHECK: %{{[0-9]+}}, %arg1 :
+    ttng.wait_barrier %alloc, %phase, %true : !ttg.memdesc<1xi64, #shared0, #smem>
+
+    // CHECK: @!$2 bra.uni skipWait
+    // CHECK: waitLoop:
+    // CHECK: mbarrier.try_wait.parity.relaxed.cluster.shared.b64
+    // CHECK: @!complete bra.uni waitLoop
+    // CHECK: skipWait:
+    // CHECK: %{{[0-9]+}}, %arg1, %arg2 :
+    ttng.wait_barrier %alloc, %phase, %pred : !ttg.memdesc<1xi64, #shared0, #smem>
+    tt.return
+  }
+}
 
 // -----
 

@@ -25,24 +25,39 @@ public:
 
   void runOnOperation() override {
     ModuleOp mod = getOperation();
-    Operation *firstMatmul = nullptr;
-    bool firstTwoCTA = false;
+    Operation *firstTcGenOp = nullptr;
+    bool global2CTA = false;
+    unsigned numCTAs = triton::gpu::TritonGPUDialect::getNumCTAs(mod);
+    if (numCTAs != 1 && numCTAs != 2) {
+      mod.emitError("Only 1 or 2 CTAs supported for now.");
+      signalPassFailure();
+      return;
+    }
 
-    WalkResult result = mod.walk([&](ttng::TCGen5MMAOp op) {
-      bool currentTwoCTA = op.getTwoCtas();
-      if (!firstMatmul) {
-        firstMatmul = op;
-        firstTwoCTA = currentTwoCTA;
+    WalkResult result = mod.walk([&](Operation *op) {
+      bool op2CTA = false;
+      if (auto mmaOp = dyn_cast<ttng::TCGen5MMAOp>(op))
+        op2CTA = mmaOp.getTwoCtas();
+      else if (isa<ttng::TMEMCopyOp>(op) || isa<ttng::TCGen5CommitOp>(op))
+        op2CTA = (numCTAs == 2);
+      else
+        return WalkResult::advance();
+
+      if (!firstTcGenOp) {
+        firstTcGenOp = op;
+        global2CTA = op2CTA;
         return WalkResult::advance();
       }
-      if (currentTwoCTA != firstTwoCTA) {
-        auto diag = op.emitError()
-                    << "inconsistent two_ctas setting across matmuls; "
-                       "expected all matmuls to "
-                    << (firstTwoCTA ? "enable" : "disable") << " two_ctas.";
-        diag.attachNote(firstMatmul->getLoc())
-            << "first matmul here has two_ctas="
-            << (firstTwoCTA ? "true" : "false") << ".";
+      if (op2CTA != global2CTA) {
+        auto diag = op->emitError()
+                    << "inconsistent CTA mode between tcgen05 operations; "
+                       "current tcgen05 op uses "
+                    << (op2CTA ? "2" : "1") << " CTA mode:\n"
+                    << *op;
+        diag.attachNote(firstTcGenOp->getLoc())
+            << "conflicts with previous tcgen05 op that uses "
+            << (global2CTA ? "2" : "1") << " CTA mode:\n"
+            << *firstTcGenOp;
         return WalkResult::interrupt();
       }
       return WalkResult::advance();
@@ -53,8 +68,7 @@ public:
       return;
     }
 
-    bool twoCTAValue = firstMatmul ? firstTwoCTA : false;
-    mod->setAttr(AttrTwoCTAsName, BoolAttr::get(mod.getContext(), twoCTAValue));
+    mod->setAttr(AttrTwoCTAsName, BoolAttr::get(mod.getContext(), global2CTA));
   }
 };
 

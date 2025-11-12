@@ -688,7 +688,7 @@ struct TCGen5CommitOpConversion
 
     auto smemObj = LLVM::getSharedMemoryObjectFromStruct(
         loc, adaptor.getBarrier(), rewriter.getI64Type(), rewriter);
-    Value pred = LLVM::NVIDIA::createElectPredicateWarp0(loc, rewriter);
+    Value pred = LLVM::NVIDIA::createElectPredicateLeadCTAWarp0(loc, rewriter);
 
     if (adaptor.getPred())
       pred = b.and_(adaptor.getPred(), pred);

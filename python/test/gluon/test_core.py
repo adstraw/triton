@@ -876,7 +876,8 @@ def test_math_fast_dividef():
 
 
 @pytest.mark.skipif(not is_blackwell(), reason="Requires Blackwell")
-def test_tmem_copy_2d():
+@pytest.mark.parametrize("num_ctas", [1, 2])
+def test_tmem_copy_2d(num_ctas):
     device = "cuda"
 
     smem_h = 64
@@ -886,15 +887,24 @@ def test_tmem_copy_2d():
 
     @gluon.jit
     def kernel(in_ptr, out_ptr, smem_h: ttgl.constexpr, smem_w: ttgl.constexpr, num_rows: ttgl.constexpr,
-               num_cols: ttgl.constexpr):
+               num_cols: ttgl.constexpr, num_ctas: ttgl.constexpr):
+        cta_id = ttgl.program_id(1) if num_ctas == 2 else 0
         in_ptrs = in_ptr + ttgl.arange(0, smem_h)[:, None] * smem_w + ttgl.arange(0, smem_w)[None, :]
-        out_ptrs = out_ptr + ttgl.arange(0, num_rows)[:, None] * num_cols + ttgl.arange(0, num_cols)[None, :]
+        out_ptrs = out_ptr + cta_id * num_rows * num_cols + ttgl.arange(0, num_rows)[:, None] * num_cols + ttgl.arange(
+            0, num_cols)[None, :]
 
-        blocked: ttgl.constexpr = ttgl.BlockedLayout([1, 4], [32, 1], [4, 1], [1, 0])
+        if num_ctas == 2:
+            blocked: ttgl.constexpr = ttgl.BlockedLayout([1, 4], [32, 1], [4, 1], [1, 0], ctas_per_cga=[2, 1],
+                                                         cta_split_num=[1, 1])
+            smem_layout: ttgl.constexpr = ttgl.SharedLinearLayout(
+                offset_bases=[[0, 1], [0, 2], [32, 0], [0, 4], [1, 0], [2, 0], [4, 0], [8, 0], [16, 0], [0, 8]],
+                block_bases=[[0, 0]])
+        else:
+            blocked: ttgl.constexpr = ttgl.BlockedLayout([1, 4], [32, 1], [4, 1], [1, 0])
+            smem_layout: ttgl.constexpr = ttgl.SharedLinearLayout(
+                offset_bases=[[0, 1], [0, 2], [32, 0], [0, 4], [1, 0], [2, 0], [4, 0], [8, 0], [16, 0], [0, 8]])
+
         value = ttgl.load(ttgl.set_auto_layout(in_ptrs, blocked))
-
-        smem_layout: ttgl.constexpr = ttgl.SharedLinearLayout(
-            offset_bases=[[0, 1], [0, 2], [32, 0], [0, 4], [1, 0], [2, 0], [4, 0], [8, 0], [16, 0], [0, 8]])
         tmem_layout: ttgl.constexpr = TensorMemoryScalesLayout()
         smem = ttgl.allocate_shared_memory(ttgl.int8, (smem_h, smem_w), layout=smem_layout)
         tmem = allocate_tensor_memory(ttgl.int8, (smem_h, smem_w), layout=tmem_layout)
@@ -914,9 +924,6 @@ def test_tmem_copy_2d():
 
     torch.manual_seed(0)
     x = torch.randint(size=(smem_h, smem_w), low=-100, high=100, dtype=torch.int8).to(device)
-    #x = torch.arange(smem_h * smem_w, dtype=torch.int8, device=device).reshape(smem_h, smem_w)
-    z_tri = torch.zeros(size=(num_rows, num_cols), dtype=torch.int8).to(device)
-    kernel[(1, )](x, z_tri, smem_h, smem_w, num_rows, num_cols)
 
     # offset_bases=[[0, 1], [0, 2], [32, 0], [0, 4], [1, 0], [2, 0], [4, 0], [8, 0], [16, 0], [0, 8]],
     # Split into contiguous shmem chunks
@@ -926,9 +933,11 @@ def test_tmem_copy_2d():
     # Reshape as 32xnum_cols
     x_res = x_res.reshape(num_rows // 4, num_cols)
 
-    warps = torch.chunk(z_tri, chunks=4, dim=0)
-    for warp in warps:
-        torch.testing.assert_close(x_res, warp)
+    z_tri = torch.zeros(size=(num_ctas, num_rows, num_cols), dtype=torch.int8).to(device)
+    kernel[(1, num_ctas)](x, z_tri, smem_h, smem_w, num_rows, num_cols, num_ctas=num_ctas)
+    for cta_id in range(num_ctas):
+        for warp in torch.chunk(z_tri[cta_id], chunks=4, dim=0):
+            torch.testing.assert_close(x_res, warp, msg=f"CTA {cta_id} data mismatch")
 
 
 @pytest.mark.skipif(not is_blackwell(), reason="Requires Blackwell")
@@ -1171,12 +1180,14 @@ def test_tma_slice():
 @pytest.mark.parametrize("swizzle", [32, 64, 128])
 @pytest.mark.parametrize("num_warps", [4, 8])
 @pytest.mark.parametrize("M, N, BLOCK_N", [(128, 128, 128), (256, 128, 64), (128, 128, 16)])
+@pytest.mark.parametrize("num_ctas", [1, 2])
 @pytest.mark.skipif(not is_blackwell(), reason="Requires Blackwell")
-def test_tmem_copy_no_scales(M, N, BLOCK_N, num_warps, swizzle):
+def test_tmem_copy_no_scales(M, N, BLOCK_N, num_warps, swizzle, num_ctas):
 
     @gluon.jit
     def tmem_copy_no_scales(in_ptr, out_ptr, M: ttgl.constexpr, N: ttgl.constexpr, BLOCK_N: ttgl.constexpr,
-                            swizzle: ttgl.constexpr, num_warps: ttgl.constexpr):
+                            swizzle: ttgl.constexpr, num_warps: ttgl.constexpr, num_ctas: ttgl.constexpr):
+        cta_id = ttgl.program_id(1) if num_ctas == 2 else 0
         tmem_layout: ttgl.constexpr = TensorMemoryLayout(
             block=(128, BLOCK_N),
             col_stride=32 // in_ptr.dtype.element_ty.primitive_bitwidth,
@@ -1186,6 +1197,8 @@ def test_tmem_copy_no_scales(M, N, BLOCK_N, num_warps, swizzle):
             (M, N),
             tmem_layout,
             num_warps=num_warps,
+            ctas_per_cga=([2, 1] if num_ctas == 2 else [1, 1]),
+            cta_split_num=([1, 1] if num_ctas == 2 else [1, 1]),
         )
         offs_m = ttgl.arange(0, M, ttgl.SliceLayout(1, tmem_reg_layout))
         offs_n = ttgl.arange(0, N, ttgl.SliceLayout(0, tmem_reg_layout))
@@ -1193,7 +1206,12 @@ def test_tmem_copy_no_scales(M, N, BLOCK_N, num_warps, swizzle):
 
         input = ttgl.load(in_ptr + offs)
 
-        smem_layout: ttgl.constexpr = ttgl.NVMMASharedLayout(swizzle_byte_width=swizzle, element_bitwidth=32, rank=2)
+        if num_ctas == 2:
+            smem_layout: ttgl.constexpr = ttgl.NVMMASharedLayout(swizzle_byte_width=swizzle, element_bitwidth=32,
+                                                                 rank=2, ctas_per_cga=[2, 1], cta_split_num=[1, 1])
+        else:
+            smem_layout: ttgl.constexpr = ttgl.NVMMASharedLayout(swizzle_byte_width=swizzle, element_bitwidth=32,
+                                                                 rank=2)
         smem = ttgl.allocate_shared_memory(in_ptr.dtype.element_ty, [M, N], layout=smem_layout)
 
         smem.store(input)
@@ -1208,13 +1226,13 @@ def test_tmem_copy_no_scales(M, N, BLOCK_N, num_warps, swizzle):
         tcgen05_commit(bar)
         mbarrier.wait(bar, phase=0)
         output = tmem.load(tmem_reg_layout)
-        ttgl.store(out_ptr + offs, output)
+        ttgl.store(out_ptr + cta_id * M * N + offs, output)
 
     input = torch.arange(M * N, device="cuda").reshape(M, N).to(torch.int32)
-    output = torch.empty_like(input)
-
-    tmem_copy_no_scales[(1, )](input, output, M, N, BLOCK_N, swizzle, num_warps=num_warps)
-    assert (output == input).all()
+    output = torch.empty((num_ctas, M, N), dtype=torch.int32, device="cuda")
+    tmem_copy_no_scales[(1, num_ctas)](input, output, M, N, BLOCK_N, swizzle, num_warps=num_warps, num_ctas=num_ctas)
+    for cta_id in range(num_ctas):
+        assert (output[cta_id] == input).all(), f"CTA {cta_id} data mismatch"
 
 
 @gluon.jit

@@ -139,6 +139,19 @@ Value createElectPredicateWarp0(Location loc, RewriterBase &rewriter) {
   return b.and_(warp0, createElectPredicate(loc, rewriter));
 }
 
+// Creates a predicate true for one thread in warp0 of even-ranked CTAs (0, 2,
+// 4, ...). Used for cluster-wide operations that should execute on only one CTA
+// in 2-CTA mode.
+Value createElectPredicateLeadCTAWarp0(Location loc, RewriterBase &rewriter) {
+  auto b = TritonLLVMOpBuilder(loc, rewriter);
+  Value pred = createElectPredicateWarp0(loc, rewriter);
+  Value clusterRank = triton::nvgpu::ClusterCTAIdOp::create(
+      rewriter, loc, rewriter.getI32Type());
+  Value rankMod2 = b.urem(clusterRank, b.i32_val(2));
+  Value isLeadCTA = b.icmp_eq(rankMod2, b.i32_val(0));
+  return b.and_(pred, isLeadCTA);
+}
+
 LogicalResult lowerLdStMatrix(
     Location loc, LinearLayout cvt, bool transpose,
     SmallVector<Value> &vals, // Input for stmatrix, output for ldmatrix

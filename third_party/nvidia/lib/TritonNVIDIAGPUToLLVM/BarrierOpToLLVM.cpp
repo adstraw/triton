@@ -160,6 +160,15 @@ struct WaitBarrierOpConversion
         typeConverter->convertType(op.getAlloc().getType().getElementType()),
         rewriter);
     auto loc = op.getLoc();
+
+    unsigned numCTAs = triton::gpu::lookupNumCTAs(rewriter);
+    if (numCTAs != 1 && numCTAs != 2)
+      return op.emitError("Only 1 or 2 CTAs supported for now.");
+
+    // Select scope: .relaxed.cluster for 2 CTA mode, .shared for 1 CTA mode
+    bool twoCTAs = triton::nvidia_gpu::getModuleTwoCTAs(op);
+    std::string scope = twoCTAs ? ".relaxed.cluster.shared" : ".shared";
+
     bool predicated =
         adaptor.getPred() && !matchPattern(op.getPred(), m_NonZero());
     std::string ptx;
@@ -169,7 +178,8 @@ struct WaitBarrierOpConversion
 {
 	.reg .pred complete;
 	waitLoop:
-	mbarrier.test_wait.parity.shared.b64 complete, [$0], $1;
+	mbarrier.test_wait.parity)" +
+              scope + R"(.b64 complete, [$0], $1;
 	@!complete nanosleep.u32 20;
 	@!complete bra.uni waitLoop;
 }
@@ -180,7 +190,8 @@ struct WaitBarrierOpConversion
 	@!$2 bra.uni skipWait;
 	.reg .pred complete;
 	waitLoop:
-	mbarrier.test_wait.parity.shared.b64 complete, [$0], $1;
+	mbarrier.test_wait.parity)" +
+              scope + R"(.b64 complete, [$0], $1;
 	@!complete nanosleep.u32 20;
 	@!complete bra.uni waitLoop;
 	skipWait:
@@ -193,7 +204,8 @@ struct WaitBarrierOpConversion
 {
 	.reg .pred complete;
 	waitLoop:
-	mbarrier.try_wait.parity.shared.b64 complete, [$0], $1;
+	mbarrier.try_wait.parity)" +
+              scope + R"(.b64 complete, [$0], $1;
 	@!complete bra.uni waitLoop;
 }
 )";
@@ -203,7 +215,8 @@ struct WaitBarrierOpConversion
 	@!$2 bra.uni skipWait;
 	.reg .pred complete;
 	waitLoop:
-	mbarrier.try_wait.parity.shared.b64 complete, [$0], $1;
+	mbarrier.try_wait.parity)" +
+              scope + R"(.b64 complete, [$0], $1;
 	@!complete bra.uni waitLoop;
 	skipWait:
 }
