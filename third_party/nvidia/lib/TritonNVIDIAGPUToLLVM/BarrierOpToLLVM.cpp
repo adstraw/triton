@@ -161,13 +161,15 @@ struct WaitBarrierOpConversion
         typeConverter->convertType(op.getAlloc().getType().getElementType()),
         rewriter);
     auto loc = op.getLoc();
-    
-    // Use module-level two-ctas attribute to determine barrier scope
-    bool twoCTAs = triton::nvidia_gpu::getModuleTwoCTAs(op);
-    
+
+    unsigned numCTAs = triton::gpu::lookupNumCTAs(rewriter);
+    if (numCTAs != 1 && numCTAs != 2)
+      return op.emitError("Only 1 or 2 CTAs supported for now.");
+
     // Select scope: .relaxed.cluster for 2 CTA mode, .shared for 1 CTA mode
+    bool twoCTAs = triton::nvidia_gpu::getModuleTwoCTAs(op);
     std::string scope = twoCTAs ? ".relaxed.cluster.shared" : ".shared";
-    
+
     bool predicated =
         adaptor.getPred() && !matchPattern(op.getPred(), m_NonZero());
     std::string ptx;

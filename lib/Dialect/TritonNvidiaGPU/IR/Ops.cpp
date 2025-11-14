@@ -752,7 +752,7 @@ LogicalResult TMEMCopyOp::verify() {
   auto mod = getOperation()->getParentOfType<ModuleOp>();
   unsigned numCTAs = triton::gpu::TritonGPUDialect::getNumCTAs(mod);
   if (numCTAs != 1 && numCTAs != 2)
-    return emitOpError("Only 1 or 2 CTAs supported for TMEMCopyOp.");
+    return emitOpError("Only 1 or 2 CTAs supported for now.");
 
   // Fp4 we could lift if we needed
   auto nvmmaEnc =

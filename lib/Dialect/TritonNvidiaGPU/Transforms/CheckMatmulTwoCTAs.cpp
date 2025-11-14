@@ -28,12 +28,18 @@ public:
     Operation *firstTcGenOp = nullptr;
     bool global2CTA = false;
     unsigned numCTAs = triton::gpu::TritonGPUDialect::getNumCTAs(mod);
+    if (numCTAs != 1 && numCTAs != 2) {
+      mod.emitError("Only 1 or 2 CTAs supported for now.");
+      signalPassFailure();
+      return;
+    }
 
     WalkResult result = mod.walk([&](Operation *op) {
       bool op2CTA = false;
       if (auto mmaOp = dyn_cast<ttng::TCGen5MMAOp>(op))
         op2CTA = mmaOp.getTwoCtas();
-      else if (isa<ttng::TMEMCopyOp>(op))
+      // TODO: update testing for tc_gen5_commit op
+      else if (isa<ttng::TMEMCopyOp>(op) || isa<ttng::TCGen5CommitOp>(op))
         op2CTA = (numCTAs == 2);
       else
         return WalkResult::advance();

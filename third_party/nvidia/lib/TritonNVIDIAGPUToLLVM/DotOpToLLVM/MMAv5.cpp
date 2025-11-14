@@ -685,6 +685,9 @@ struct TCGen5CommitOpConversion
                   ConversionPatternRewriter &rewriter) const override {
     Location loc = op.getLoc();
     TritonLLVMOpBuilder b(loc, rewriter);
+    unsigned numCTAs = lookupNumCTAs(rewriter);
+    if (numCTAs != 1 && numCTAs != 2)
+      return op.emitError("Only 1 or 2 CTAs supported for now.");
 
     auto smemObj = LLVM::getSharedMemoryObjectFromStruct(
         loc, adaptor.getBarrier(), rewriter.getI64Type(), rewriter);
