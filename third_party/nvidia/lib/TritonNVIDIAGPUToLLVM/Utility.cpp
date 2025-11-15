@@ -139,6 +139,20 @@ Value createElectPredicateWarp0(Location loc, RewriterBase &rewriter) {
   return b.and_(warp0, createElectPredicate(loc, rewriter));
 }
 
+Value createElectPredicateLeadCTAWarp0(Location loc, RewriterBase &rewriter) {
+  auto b = TritonLLVMOpBuilder(loc, rewriter);
+  // Start with warp0 elected predicate
+  Value pred = createElectPredicateWarp0(loc, rewriter);
+  // AND with cluster_ctarank == 0 (lead CTA)
+  // In 1-CTA mode, cluster_ctarank is always 0 (harmless check)
+  // In 2-CTA mode, only CTA0 will have this predicate true
+  // TODO: this should be cluster_rank % 2 == 0 for future proofing to nCTA
+  Value clusterRank = triton::nvgpu::ClusterCTAIdOp::create(
+      rewriter, loc, rewriter.getI32Type());
+  Value isLeadCTA = b.icmp_eq(clusterRank, b.i32_val(0));
+  return b.and_(pred, isLeadCTA);
+}
+
 LogicalResult lowerLdStMatrix(
     Location loc, LinearLayout cvt, bool transpose,
     SmallVector<Value> &vals, // Input for stmatrix, output for ldmatrix
