@@ -340,14 +340,15 @@ def _p_matmul_ogs(
                 else:
                     x_scales = tl.full((BLOCK_M, BLOCK_K // MX_PACK_DIVISOR), 127, dtype=tl.uint8)
                 tl.static_assert(MX_PACK_DIVISOR % W_PACK_DIVISOR == 0)
-                if SWIZZLE_MX_SCALE == "BLACKWELL_SCALE":
-                    flattened_expt_n_idx = expt_id * ((N + 127) // 128) + (off_n // 128)
-                    w_scales = WMxScale.load([0, flattened_expt_n_idx, off_k_mx // 4, 0, 0])
-                    w_scales = w_scales.reshape((w_scales.shape[1], w_scales.shape[2] * w_scales.shape[-2] * w_scales.shape[-1]))
-                    w_scales = unswizzle_mx_scale_bw(w_scales)
-                else:
-                    w_scales = WMxScale.load([expt_id, off_k_mx, off_n])
-                    w_scales = tl.reshape(w_scales, *w_scales.shape[1:]).T
+                #if SWIZZLE_MX_SCALE == "BLACKWELL_SCALE":
+                #    flattened_expt_n_idx = expt_id * ((N + 127) // 128) + (off_n // 128)
+                #    w_scales = WMxScale.load([0, flattened_expt_n_idx, off_k_mx // 4, 0, 0])
+                #    w_scales = w_scales.reshape((w_scales.shape[1], w_scales.shape[2] * w_scales.shape[-2] * w_scales.shape[-1]))
+                #    w_scales = unswizzle_mx_scale_bw(w_scales)
+                #else:
+                #    w_scales = WMxScale.load([expt_id, off_k_mx, off_n])
+                #    w_scales = tl.reshape(w_scales, *w_scales.shape[1:]).T
+                w_scales = tl.full((BLOCK_N, BLOCK_K // MX_PACK_DIVISOR), 127, dtype=tl.uint8)
 
             # --- update accumulator ---
             if is_w_microscaled:

@@ -182,6 +182,10 @@ def make_default_opt_flags_nvidia(
     # pid swizzling
     group_m = 8
     xcd_swizzle = 1
+
+    if rhs_dtype == FP4:
+        group_m = 4
+
     # block_m
     if constraints.get("block_m", None):
         block_m = constraints["block_m"]
@@ -215,10 +219,10 @@ def make_default_opt_flags_nvidia(
         block_k = constraints["block_k"]
     else:
         block_k = opt_flags_nvidia.compute_block_k(m, k, is_persistent, lhs_dtype, rhs_dtype, precision_config, has_y_acc_in)
-    if block_n == 256 and block_k == 128 and block_m <= 64 and is_persistent and rhs_dtype == FP4 and k >= 4096 and tokens_per_expt > 1:
-        # Swap block_n and block_k for mxfp4 weights so that block_k is a full cacheline, so long as K is sufficiently large.
-        # TODO: swizzle the HBM layout of the weights instead
-        block_n, block_k = block_k, block_n
+    #if block_n == 256 and block_k == 128 and block_m <= 64 and is_persistent and rhs_dtype == FP4 and k >= 4096 and tokens_per_expt > 1:
+    #    # Swap block_n and block_k for mxfp4 weights so that block_k is a full cacheline, so long as K is sufficiently large.
+    #    # TODO: swizzle the HBM layout of the weights instead
+    #    block_n, block_k = block_k, block_n
     # split_k
     if constraints.get("split_k", None) is not None:
         split_k = constraints["split_k"]
@@ -257,6 +261,11 @@ def make_default_opt_flags_nvidia(
 
     if constraints.get("num_stages", None):
         num_stages = constraints["num_stages"]
+
+    # TODO: This may only be possible when we don't load scales
+    if rhs_dtype == FP4 and not constraints.get("num_stages", None):
+        num_stages = 5
+
     assert num_stages >= 1
     # fused scatter scratchpad
     if constraints.get("fused_scatter", None) is not None:
