@@ -43,6 +43,28 @@ def _load_writeback_idx_and_mask(WriteBackIndx, writeback_size, offs, mask):
     mask = offs != -1
     return (offs, mask)
 
+# ================================================================================
+# MINIMAL DIFF SUMMARY: FP8x-FP8w vs FP8x-MX4w
+# ================================================================================
+# ONLY SHOWING DIFFERENCES (all other parameters are identical)
+# Parameter                  | FP8x-FP8w              | FP8x-MX4w
+# ========================== | ====================== | =========================
+# W dtype                    | float8_e4m3fn          | FP4 (uint8 packed)
+# W storage shape            | [128, 5760, 5760]      | [128, 2944, 5760]
+# W storage strides          | (33177600, 5760, 1)    | (16957440, 1, 2944)
+# W transpose                | False                  | True
+# W scale (scalar)           | 6.1329                 | None
+# W has_mx                   | False                  | True
+# W mx_scale                 | None                   | [1, 5760, 46, 2, 256]
+# W scale layout             | None                   | BLACKWELL_SCALE
+# BLOCK_N                    | 256                    | 128
+# BLOCK_K                    | 128                    | 256
+# grid_n                     | 23                     | 45
+# SWIZZLE_MX_VALUE           | None                   | BLACKWELL_VALUE
+# SWIZZLE_MX_SCALE           | None                   | BLACKWELL_SCALE
+# EVEN_K                     | True                   | False
+# SWAP_XW                    | False                  | True
+# ================================================================================
 
 _matmul_ogs_repr = make_matmul_repr("_p_matmul_ogs", [0, 1, 2])
 @triton.jit(do_not_specialize=["TOKENS_PER_EXPT_FOR_ANNOTATION"],
